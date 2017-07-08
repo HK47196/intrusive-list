@@ -5,9 +5,17 @@
  */
 
 #pragma once
-
 #include <cassert>
+#include <utility>
+#ifdef STUPIDLY_STD_COMPLIANT
 #include <iterator>
+#else
+namespace std{
+  struct forward_iterator_tag;
+}
+#endif
+
+
 
 namespace unstd {
 
