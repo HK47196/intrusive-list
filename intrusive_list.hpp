@@ -48,7 +48,6 @@ public:
   using node = intrusive_node<T>;
   node* ptr_;
 
-  // list_iterator(pointer ptr, pointer prev_ptr)
   list_iterator(node* ptr)
     : ptr_(ptr) {}
 
@@ -91,8 +90,6 @@ public:
 
   using iterator = unstd::list_iterator<T>;
   using const_iterator = unstd::list_iterator<T, true>;
-  // using reverse_iterator = std::reverse_iterator<iterator>;
-  // using const_reverse_iterator = std::reverse_iterator<const_iterator>;
 
   constexpr islist() {}
 
@@ -173,28 +170,6 @@ public:
     assert(pos != end());
     insert_after(&(*pos), val);
   }
-
-  // void erase_after(iterator it) {
-  // modification_invariant();
-  //   assert(!empty());
-  //   assert(size() > 0);
-  //   assert(head_ != nullptr);
-  //   assert(tail_ != nullptr);
-  //   pointer p = &(*it);
-  //   if (p == head) {
-  //     return pop_front();
-  //   } else if (p == tail) {
-  //     return pop_back();
-  //   }
-  //
-  //   node<T>& n = p->*node_ptr;
-  //   --size_;
-  //   assert(n.next != nullptr && n.prev != nullptr);
-  //   (n.prev->*node_ptr).next = n.next;
-  //   (n.next->*node_ptr).prev = n.prev;
-  //
-  //   n.clear();
-  // }
 
   void pop_front() {
     modification_invariant();
