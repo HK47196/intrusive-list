@@ -9,16 +9,31 @@
 #include "doctest.h"
 #include <algorithm>
 #include <array>
+#include <memory>
 
 struct S {
-  unstd::intrusive_node<S> n{this};
-  unstd::intrusive_node<S> n2{this};
+  pep::intrusive_node n;
+  pep::intrusive_node n2;
 
   friend bool operator==(const S& lhs, const S& rhs) { return &lhs == &rhs; }
 };
 
-using sl = unstd::islist<S, &S::n>;
-using sl2 = unstd::islist<S, &S::n2>;
+using sl = pep::islist<S, &S::n>;
+using sl2 = pep::islist<S, &S::n2>;
+
+struct empty {};
+
+auto constexpr foob(pep::intrusive_node S::*mem_p) {
+  union {
+    empty e{};
+    S s;
+  } s{};
+  pep::intrusive_node& n = s.s.*mem_p;
+  char* c1 = static_cast<char*>(static_cast<void*>(std::addressof(s)));
+  char* c2 = static_cast<char*>(static_cast<void*>(std::addressof(n)));
+  auto i = c2 - c1;
+  return i;
+}
 
 template <typename iter>
 void reverse(iter first, iter last) {
@@ -36,6 +51,8 @@ void reverse(iter first, iter last) {
 
 TEST_CASE("ilist") {
   sl sl_;
+  S s;
+  constexpr auto _p = pep::details::offset_of(&S::n);
   REQUIRE(sl_.empty());
   std::array<S, 10> arr;
   SUBCASE("1") {

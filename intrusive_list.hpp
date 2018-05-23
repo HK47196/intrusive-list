@@ -6,37 +6,72 @@
 
 #pragma once
 #include <cassert>
+#include <cstdint>
 #include <utility>
 #ifdef STUPIDLY_STD_COMPLIANT
-#include <iterator>
+#  include <iterator>
 #else
-namespace std{
-  struct forward_iterator_tag;
+namespace std {
+struct forward_iterator_tag;
 }
 #endif
 
+namespace pep {
 
-
-namespace unstd {
-
+struct intrusive_node;
+namespace details {
 template <typename T>
+constexpr size_t offset_of(intrusive_node T::*mem_p);
+}
+
 struct intrusive_node {
 private:
-  T* const owner_;
   intrusive_node* next_{nullptr};
 
 public:
-  constexpr intrusive_node(T* owner)
-    : owner_(owner) {}
-
   intrusive_node* next() { return next_; }
   intrusive_node* next() const { return next_; }
   void next(intrusive_node* n) { next_ = n; }
 
-  T* owner() { return owner_; }
+  template <typename T>
+  T* owner(intrusive_node T::*mem_p) {
+    char* this_addr = reinterpret_cast<char*>(this);
+    size_t this_offset = details::offset_of(mem_p);
+    char* owner_addr = this_addr - this_offset;
+    assert(owner_addr <= this_addr);
+    assert(reinterpret_cast<std::uintptr_t>(owner_addr) % alignof(T) == 0);
+    return reinterpret_cast<T*>(owner_addr);
+  }
 };
 
-template <typename T, bool isConst = false>
+namespace details {
+struct list_empty_t {};
+template <typename T>
+constexpr size_t offset_of(intrusive_node T::*mem_p) {
+  union {
+    char data[sizeof(T)]{};
+    T v;
+  } u{};
+
+  // workaround for gcc bug
+  bool found = false;
+  // https://stackoverflow.com/a/49776289/754018
+  void const* const desired_addr = static_cast<void const*>(std::addressof(u.v.*mem_p));
+  for (size_t i = 0; i != sizeof(T); ++i) {
+    void const* const checking_addr = static_cast<void const*>(std::addressof(u.data[i]));
+    if (checking_addr == desired_addr) {
+      return i;
+    }
+  }
+  if (!found) {
+    throw 0;
+  }
+  return -1u;
+}
+
+} // namespace details
+
+template <typename T, intrusive_node T::*node_ptr, bool isConst = false>
 class list_iterator {
 public:
   using value_type = std::conditional_t<isConst, const T, T>;
@@ -45,18 +80,17 @@ public:
   using difference_type = std::ptrdiff_t;
   using iterator_category = std::forward_iterator_tag;
 
-  using node = intrusive_node<T>;
+  using node = intrusive_node;
   node* ptr_;
 
-  list_iterator(node* ptr)
-    : ptr_(ptr) {}
+  list_iterator(node* ptr) : ptr_(ptr) {}
 
   reference operator*() {
     assert(ptr_ != nullptr);
-    return *(ptr_->owner());
+    return *(ptr_->owner<T>(node_ptr));
   }
 
-  pointer operator->() { return ptr_->owner(); }
+  pointer operator->() { return ptr_->owner<T>(node_ptr); }
 
   list_iterator operator++(int) {
     auto tmp = *this;
@@ -78,7 +112,7 @@ public:
 // TODO: move functions that don't depend on node_ptr to base class to reduce
 // template instantiations.
 
-template <typename T, intrusive_node<T> T::*node_ptr>
+template <typename T, intrusive_node T::*node_ptr>
 class islist {
 public:
   using value_type = T;
@@ -88,8 +122,8 @@ public:
   using const_pointer = T*;
   using difference_type = std::ptrdiff_t;
 
-  using iterator = unstd::list_iterator<T>;
-  using const_iterator = unstd::list_iterator<T, true>;
+  using iterator = pep::list_iterator<T, node_ptr>;
+  using const_iterator = pep::list_iterator<T, node_ptr, true>;
 
   constexpr islist() {}
 
@@ -97,22 +131,22 @@ public:
 
   const_reference front() {
     assert(!empty());
-    return *(head_.next()->owner());
+    return *(head_.next()->template owner<T>(node_ptr));
   }
 
   const_reference front() const {
     assert(!empty());
-    return *(head_.next()->owner());
+    return *(head_.next()->template owner<T>(node_ptr));
   }
 
   reference back() {
     assert(!empty());
-    return *back_->owner();
+    return *back_->owner<T>(node_ptr);
   }
 
   const_reference back() const {
     assert(!empty());
-    return *back_->owner();
+    return *back_->owner<T>(node_ptr);
   }
 
   difference_type size() const { return size_; }
@@ -122,10 +156,10 @@ public:
     ++size_;
     node* n = &(val->*node_ptr);
     assert(n->next() == nullptr);
-    if(back_){
+    if (back_) {
       assert(head_.next() != nullptr);
       back_->next(n);
-    } else{
+    } else {
       assert(head_.next() == nullptr);
       head_.next(n);
     }
@@ -139,7 +173,7 @@ public:
     assert(n->next() == nullptr);
     n->next(head_.next());
     head_.next(n);
-    if(!back_){
+    if (!back_) {
       back_ = n;
     }
   }
@@ -162,7 +196,7 @@ public:
     // set the new node's next to the previous node's next
     n.next(prev.next());
     // update the previous node's next pointer to the inserted node.
-    prev.next(n);
+    prev.next(&n);
   }
 
   void insert_after(const_iterator pos, pointer val) {
@@ -199,10 +233,10 @@ private:
     assert(head_.next() != nullptr);
   }
 
-  using node = intrusive_node<T>;
+  using node = intrusive_node;
   // Sentinel head
-  node head_{nullptr};
+  node head_{};
   node* back_{nullptr};
   difference_type size_{0};
 };
-} // namespace unstd
+} // namespace pep

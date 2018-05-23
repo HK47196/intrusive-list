@@ -4,7 +4,14 @@ Simple intrusive singly linked list with no dependencies outside of the standard
 library. Probably requires C++14 to compile, might compile with C++11, I haven't
 tried.
 
-I know Boost has one, but it also pulls in *tons* of dependencies.
+I know Boost has one. But this is a valid argument against using it:
+
+```
+printf '#include<boost/intrusive/list.hpp>' | g++ -E -x c++ - | wc -l
+13890
+printf '#include "intrusive_list.hpp"' | g++ -E -x c++ - | wc -l
+3959
+```
 
 By default, it violates the standard by forward declaring
 `std::forward_iterator_tag`. This is to avoid including `<iterator>` which
