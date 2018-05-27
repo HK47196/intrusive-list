@@ -17,9 +17,5 @@ look didn't seem to *require* it), but libstdc++ does it.
 
 ## details
 
-`pep::intrusive_node` has an overhead of only 2 pointers.
-
-
-## TODO
-
-a node variant that automatically unlinks itself in the destructor.
+`pep::intrusive_node` has an overhead of only 2 pointers. Nodes automatically
+remove themselves from a list in their destructor.

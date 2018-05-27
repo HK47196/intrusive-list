@@ -37,12 +37,12 @@ private:
     intrusive_node* prev_node = get_prev();
     intrusive_node* next_node = get_next();
 
-    if (next_node == nullptr) {
-      assert(prev_node == nullptr && "sanity error");
-      return;
+    if (prev_node != nullptr) {
+      prev_node->set_next(next_node);
     }
-    prev_node->set_next(next_node);
-    next_node->set_prev(prev_node);
+    if (next_node != nullptr) {
+      next_node->set_prev(prev_node);
+    }
     set_next(nullptr);
     set_prev(nullptr);
   }
@@ -54,6 +54,13 @@ public:
   constexpr intrusive_node(intrusive_node&& other) noexcept {
     // TODO
     *this = std::move(other);
+  }
+
+  ~intrusive_node() {
+    if (!is_linked()) {
+      return;
+    }
+    remove_self();
   }
 
   constexpr intrusive_node& operator=(const intrusive_node&) = delete;
@@ -92,7 +99,21 @@ public:
     prev_ = n;
   }
 
-  constexpr bool is_linked() const { return next_ != nullptr; }
+  constexpr bool is_linked() const {
+    intrusive_node* prev_node = get_prev();
+    intrusive_node* next_node = get_next();
+    return (prev_node != nullptr) || (next_node != nullptr);
+  }
+
+  constexpr bool is_head() const {
+    intrusive_node* prev_node = get_prev();
+    return (prev_node != nullptr);
+  }
+
+  constexpr bool is_tail() const {
+    intrusive_node* next_node = get_next();
+    return (next_node != nullptr);
+  }
 
   // ?? should this return const T*?
   template <typename T, intrusive_node T::*mem_p>
@@ -216,7 +237,7 @@ public:
 
   [[nodiscard]] inline bool empty() const;
   [[nodiscard]] inline bool is_empty() const;
-  [[nodiscard]] inline difference_type size() const;
+  // [[nodiscard]] inline difference_type size() const;
   inline void insert_after(intrusive_node* pos, intrusive_node* val);
   inline void pop_front();
   inline void pop_back();
@@ -238,12 +259,12 @@ inline bool ilist_base::empty() const {
 }
 
 inline bool ilist_base::is_empty() const {
-  return size() == 0;
+  return head_.get_next() == &tail_;
 }
 
-inline ilist_base::difference_type ilist_base::size() const {
-  return size_;
-}
+// inline ilist_base::difference_type ilist_base::size() const {
+//   return size_;
+// }
 
 inline void ilist_base::insert_after(intrusive_node* pos, intrusive_node* val) {
   node_invariant(val);
@@ -372,6 +393,7 @@ public:
 
   void push_back(pointer val) {
     intrusive_node* real_tail = tail_.get_prev();
+    assert(real_tail->is_linked() && "sanity error");
     insert_after(real_tail->owner<T, node_ptr>(), val);
   }
 

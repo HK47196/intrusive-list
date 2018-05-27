@@ -18,7 +18,7 @@ struct S {
 
   friend bool operator==(const S& lhs, const S& rhs) { return &lhs == &rhs; }
 
-  ~S(){}
+  ~S() {}
 
   S(const S&) = delete;
   S& operator=(const S&) = delete;
@@ -188,7 +188,7 @@ TEST_CASE("non-empty list destructor") {
     sl_.push_front(&b);
     sl_.push_front(&c);
     REQUIRE(!sl_.empty());
-    REQUIRE(sl_.size() == 3);
+    // REQUIRE(sl_.size() == 3);
     REQUIRE(a.n.is_linked());
     REQUIRE(b.n.is_linked());
     REQUIRE(c.n.is_linked());
@@ -203,32 +203,32 @@ TEST_CASE("size, iterators") {
   const sl& csl = sl_;
   S a{1, {}}, b{2, {}}, c{3, {}};
   REQUIRE(sl_.is_empty());
-  REQUIRE(sl_.size() == 0);
+  // REQUIRE(sl_.size() == 0);
   REQUIRE(std::distance(sl_.begin(), sl_.end()) == 0);
   REQUIRE(std::distance(sl_.cbegin(), sl_.cend()) == 0);
   REQUIRE(sl_.begin() == sl_.end());
 
   REQUIRE(csl.is_empty());
-  REQUIRE(csl.size() == 0);
+  // REQUIRE(csl.size() == 0);
   REQUIRE(std::distance(csl.begin(), csl.end()) == 0);
   REQUIRE(std::distance(csl.cbegin(), csl.cend()) == 0);
   REQUIRE(csl.begin() == csl.end());
 
   sl_.push_front(&a);
   REQUIRE(!sl_.is_empty());
-  REQUIRE(sl_.size() == 1);
+  // REQUIRE(sl_.size() == 1);
   REQUIRE(!csl.is_empty());
-  REQUIRE(csl.size() == 1);
+  // REQUIRE(csl.size() == 1);
   sl_.push_front(&b);
   REQUIRE(!sl_.is_empty());
-  REQUIRE(sl_.size() == 2);
+  // REQUIRE(sl_.size() == 2);
   REQUIRE(!csl.is_empty());
-  REQUIRE(csl.size() == 2);
+  // REQUIRE(csl.size() == 2);
   sl_.push_front(&c);
   REQUIRE(!sl_.is_empty());
-  REQUIRE(sl_.size() == 3);
+  // REQUIRE(sl_.size() == 3);
   REQUIRE(!csl.is_empty());
-  REQUIRE(csl.size() == 3);
+  // REQUIRE(csl.size() == 3);
 
   REQUIRE(std::distance(sl_.begin(), sl_.end()) == 3);
   REQUIRE(std::distance(sl_.cbegin(), sl_.cend()) == 3);
@@ -237,47 +237,48 @@ TEST_CASE("size, iterators") {
   REQUIRE(std::distance(csl.cbegin(), csl.cend()) == 3);
   REQUIRE(csl.begin() != csl.end());
 
-  REQUIRE(
-    std::accumulate(sl_.begin(), sl_.end(), 0, [](int a, const S& b) { return a + b.i; }) == 6);
-  REQUIRE(
-    std::accumulate(csl.begin(), csl.end(), 0, [](int a, const S& b) { return a + b.i; }) == 6);
+  REQUIRE(std::accumulate(sl_.begin(), sl_.end(), 0, [](int a, const S& b) { return a + b.i; }) ==
+          6);
+  REQUIRE(std::accumulate(csl.begin(), csl.end(), 0, [](int a, const S& b) { return a + b.i; }) ==
+          6);
 
   sl_.pop_front();
   REQUIRE(!sl_.is_empty());
-  REQUIRE(sl_.size() == 2);
+  // REQUIRE(sl_.size() == 2);
   REQUIRE(!csl.is_empty());
-  REQUIRE(csl.size() == 2);
+  // REQUIRE(csl.size() == 2);
   sl_.pop_front();
   REQUIRE(!sl_.is_empty());
-  REQUIRE(sl_.size() == 1);
+  // REQUIRE(sl_.size() == 1);
   REQUIRE(!csl.is_empty());
-  REQUIRE(csl.size() == 1);
+  // REQUIRE(csl.size() == 1);
   sl_.pop_front();
   REQUIRE(sl_.is_empty());
-  REQUIRE(sl_.size() == 0);
+  // REQUIRE(sl_.size() == 0);
   REQUIRE(std::distance(sl_.begin(), sl_.end()) == 0);
   REQUIRE(std::distance(sl_.cbegin(), sl_.cend()) == 0);
   REQUIRE(sl_.begin() == sl_.end());
 
   REQUIRE(csl.is_empty());
-  REQUIRE(csl.size() == 0);
+  // REQUIRE(csl.size() == 0);
   REQUIRE(std::distance(csl.begin(), csl.end()) == 0);
   REQUIRE(std::distance(csl.cbegin(), csl.cend()) == 0);
   REQUIRE(csl.begin() == csl.end());
-  REQUIRE(
-    std::accumulate(sl_.begin(), sl_.end(), 0, [](int a, const S& b) { return a + b.i; }) == 0);
-  REQUIRE(
-    std::accumulate(csl.begin(), csl.end(), 0, [](int a, const S& b) { return a + b.i; }) == 0);
+  REQUIRE(std::accumulate(sl_.begin(), sl_.end(), 0, [](int a, const S& b) { return a + b.i; }) ==
+          0);
+  REQUIRE(std::accumulate(csl.begin(), csl.end(), 0, [](int a, const S& b) { return a + b.i; }) ==
+          0);
 }
 
-TEST_CASE("move ctor"){
+TEST_CASE("move ctor") {
   S a{1, {}}, b{2, {}}, c{3, {}};
   sl sl_;
-  sl_.push_front(&a);
-  sl_.push_front(&b);
-  sl_.push_front(&c);
-  S d{std::move(a)};
-  REQUIRE(!a.n.is_linked());
-  REQUIRE(d.n.is_linked());
-  sl_.erase(d);
+  {
+    sl_.push_front(&a);
+    sl_.push_front(&b);
+    sl_.push_front(&c);
+    S d{std::move(a)};
+    REQUIRE(!a.n.is_linked());
+    REQUIRE(d.n.is_linked());
+  }
 }
