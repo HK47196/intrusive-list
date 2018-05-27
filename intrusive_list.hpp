@@ -7,12 +7,13 @@
 #pragma once
 #include <cassert>
 #include <cstdint>
+#include <cstring>
 #include <utility>
 #ifdef STUPIDLY_STD_COMPLIANT
 #  include <iterator>
 #else
 namespace std {
-struct forward_iterator_tag;
+struct bidirectional_iterator_tag;
 }
 #endif
 
@@ -20,45 +21,125 @@ namespace pep {
 
 struct intrusive_node;
 namespace details {
-template <typename T>
-constexpr size_t offset_of(intrusive_node T::*mem_p);
-}
+template <typename T1, typename T2>
+/*constexpr*/ size_t offset_of(T1 T2::*mem_p);
+
+class ilist_base;
+} // namespace details
 
 struct intrusive_node {
 private:
+  friend details::ilist_base;
   intrusive_node* next_{nullptr};
+  intrusive_node* prev_{nullptr};
+
+  constexpr void remove_self() {
+    intrusive_node* prev_node = get_prev();
+    intrusive_node* next_node = get_next();
+
+    if (next_node == nullptr) {
+      assert(prev_node == nullptr && "sanity error");
+      return;
+    }
+    prev_node->set_next(next_node);
+    next_node->set_prev(prev_node);
+    set_next(nullptr);
+    set_prev(nullptr);
+  }
 
 public:
-  intrusive_node* next() { return next_; }
-  intrusive_node* next() const { return next_; }
-  void next(intrusive_node* n) { next_ = n; }
+  constexpr intrusive_node() noexcept = default;
+  constexpr intrusive_node(const intrusive_node& other) = delete;
+  // no constexpr std::exchange, sad.
+  constexpr intrusive_node(intrusive_node&& other) noexcept {
+    // TODO
+    *this = std::move(other);
+  }
 
-  template <typename T>
-  T* owner(intrusive_node T::*mem_p) {
-    char* this_addr = reinterpret_cast<char*>(this);
+  constexpr intrusive_node& operator=(const intrusive_node&) = delete;
+  constexpr intrusive_node& operator=(intrusive_node&& other) noexcept {
+    if (&other == this) {
+      return *this;
+    }
+    set_next(other.get_next());
+    set_prev(other.get_prev());
+    other.set_next(nullptr);
+    other.set_prev(nullptr);
+    if (get_next()) {
+      get_next()->set_prev(this);
+    }
+    if (get_prev()) {
+      get_prev()->set_next(this);
+    }
+    assert(!other.is_linked());
+    return *this;
+  }
+
+  // I can't do this, it becomes non-literal.
+  //  ~intrusive_node() { assert(!is_linked() && "destructor called on linked node."); }
+
+  constexpr intrusive_node* get_next() { return next_; }
+  constexpr intrusive_node* get_next() const { return next_; }
+  constexpr void set_next(intrusive_node* n) {
+    assert(n != this && "attempted to link to self.");
+    next_ = n;
+  }
+
+  constexpr intrusive_node* get_prev() { return prev_; }
+  constexpr intrusive_node* get_prev() const { return prev_; }
+  constexpr void set_prev(intrusive_node* n) {
+    assert(n != this && "attempted to link to self.");
+    prev_ = n;
+  }
+
+  constexpr bool is_linked() const { return next_ != nullptr; }
+
+  // ?? should this return const T*?
+  template <typename T, intrusive_node T::*mem_p>
+  const T* owner() const {
+    const char* this_addr = reinterpret_cast<const char*>(this);
+    // itanium abi only
+    // static constexpr size_t this_offset = details::offset_of(mem_p);
+#if __GNUC__ && !_WIN32
+    static_assert(sizeof(mem_p) == sizeof(ptrdiff_t));
+    ptrdiff_t this_offset = 0;
+    static constexpr intrusive_node T::*mem_p2 = mem_p;
+    // itanium abi stores pointers to members as just an offset with the size of a ptrdiff_t.
+    std::memcpy(&this_offset, &mem_p2, sizeof(mem_p2));
+    assert(this_offset >= 0 && "given a bad member pointer?");
+#else
+    // No idea if this will be optimized away like the above is.
     size_t this_offset = details::offset_of(mem_p);
-    char* owner_addr = this_addr - this_offset;
+#endif
+    const char* owner_addr = this_addr - this_offset;
     assert(owner_addr <= this_addr);
     assert(reinterpret_cast<std::uintptr_t>(owner_addr) % alignof(T) == 0);
-    return reinterpret_cast<T*>(owner_addr);
+    return reinterpret_cast<const T*>(owner_addr);
+  }
+
+  template <typename T, intrusive_node T::*mem_p>
+  T* owner() {
+    return const_cast<T*>(const_cast<const intrusive_node*>(this)->owner<T, mem_p>());
   }
 };
 
 namespace details {
 struct list_empty_t {};
-template <typename T>
-constexpr size_t offset_of(intrusive_node T::*mem_p) {
-  union {
-    char data[sizeof(T)]{};
-    T v;
+template <typename T1, typename T2>
+/*constexpr*/ size_t offset_of(T1 T2::*mem_p) {
+  union U {
+    char data[sizeof(T2)];
+    T2 v;
+
+    ~U() {}
   } u{};
 
   // workaround for gcc bug
   bool found = false;
   // https://stackoverflow.com/a/49776289/754018
-  void const* const desired_addr = static_cast<void const*>(std::addressof(u.v.*mem_p));
-  for (size_t i = 0; i != sizeof(T); ++i) {
-    void const* const checking_addr = static_cast<void const*>(std::addressof(u.data[i]));
+  const void* const desired_addr = static_cast<void const*>(std::addressof(u.v.*mem_p));
+  for (size_t i = 0; i != sizeof(T2); ++i) {
+    const void* const checking_addr = static_cast<void const*>(std::addressof(u.data[i]));
     if (checking_addr == desired_addr) {
       return i;
     }
@@ -78,165 +159,256 @@ public:
   using pointer = value_type*;
   using reference = value_type&;
   using difference_type = std::ptrdiff_t;
-  using iterator_category = std::forward_iterator_tag;
+  using iterator_category = std::bidirectional_iterator_tag;
 
-  using node = intrusive_node;
+  using node = std::conditional_t<isConst, const intrusive_node, intrusive_node>;
   node* ptr_;
 
-  list_iterator(node* ptr) : ptr_(ptr) {}
+  explicit list_iterator(node* ptr) : ptr_(ptr) {}
 
   reference operator*() {
     assert(ptr_ != nullptr);
-    return *(ptr_->owner<T>(node_ptr));
+    return *(ptr_->template owner<T, node_ptr>());
   }
 
-  pointer operator->() { return ptr_->owner<T>(node_ptr); }
-
-  list_iterator operator++(int) {
-    auto tmp = *this;
-    assert(ptr_ != nullptr);
-    ptr_ = ptr_->next();
-    return tmp;
-  }
+  pointer operator->() { return ptr_->template owner<T, node_ptr>(); }
 
   list_iterator& operator++() {
     assert(ptr_);
-    ptr_ = ptr_->next();
+    ptr_ = ptr_->get_next();
     return *this;
   }
 
-  bool operator==(const list_iterator& rhs) const { return ptr_ == rhs.ptr_; }
-  bool operator!=(const list_iterator& rhs) const { return !(*this == rhs); }
+  list_iterator operator++(int) {
+    operator++();
+    return *this;
+  }
+
+  list_iterator& operator--() {
+    assert(ptr_);
+    ptr_ = ptr_->get_prev();
+    return *this;
+  }
+
+  list_iterator operator--(int) {
+    operator--();
+    return *this;
+  }
+
+  constexpr difference_type operator-(const list_iterator& rhs) { return ptr_ - rhs.ptr_; }
+
+  constexpr bool operator==(const list_iterator& rhs) const { return ptr_ == rhs.ptr_; }
+  constexpr bool operator!=(const list_iterator& rhs) const { return !(*this == rhs); }
+
+  constexpr bool operator<(const list_iterator& rhs) const { return (rhs - *this) > 0; }
+  constexpr bool operator>(const list_iterator& rhs) const { return rhs < *this; }
+  constexpr bool operator<=(const list_iterator& rhs) const { return !(*this > rhs); }
+  constexpr bool operator>=(const list_iterator& rhs) const { return !(*this < rhs); }
 };
 
 // TODO: move functions that don't depend on node_ptr to base class to reduce
 // template instantiations.
 
-template <typename T, intrusive_node T::*node_ptr>
-class islist {
+namespace details {
+class ilist_base {
 public:
-  using value_type = T;
-  using reference = T&;
-  using const_reference = const T&;
-  using pointer = T*;
-  using const_pointer = T*;
   using difference_type = std::ptrdiff_t;
+
+  [[nodiscard]] inline bool empty() const;
+  [[nodiscard]] inline bool is_empty() const;
+  [[nodiscard]] inline difference_type size() const;
+  inline void insert_after(intrusive_node* pos, intrusive_node* val);
+  inline void pop_front();
+  inline void pop_back();
+
+  inline void erase(intrusive_node* n);
+  inline void clear();
+
+protected:
+  inline void node_invariant(intrusive_node* n) const;
+  inline void modification_invariant() const;
+
+  intrusive_node head_{};
+  intrusive_node tail_{};
+  difference_type size_{0};
+};
+
+inline bool ilist_base::empty() const {
+  return is_empty();
+}
+
+inline bool ilist_base::is_empty() const {
+  return size() == 0;
+}
+
+inline ilist_base::difference_type ilist_base::size() const {
+  return size_;
+}
+
+inline void ilist_base::insert_after(intrusive_node* pos, intrusive_node* val) {
+  node_invariant(val);
+  node_invariant(pos);
+  ++size_;
+  assert(!val->is_linked() && "this node is already part of a list.");
+
+  intrusive_node* next = pos->get_next();
+  assert(next->get_prev() == pos && "sanity error");
+  val->set_next(next);
+  val->set_prev(pos);
+  pos->set_next(val);
+  next->set_prev(val);
+}
+
+inline void ilist_base::pop_front() {
+  intrusive_node* real_head = head_.get_next();
+  assert(real_head->is_linked());
+  erase(real_head);
+}
+
+inline void ilist_base::pop_back() {
+  intrusive_node* real_tail = tail_.get_prev();
+  assert(real_tail->is_linked());
+  erase(real_tail);
+}
+
+inline void ilist_base::erase(intrusive_node* n) {
+  modification_invariant();
+  assert(n != &head_ && "Invalid node.");
+  assert(n != &tail_ && "Invalid node.");
+  node_invariant(n);
+  n->remove_self();
+  node_invariant(n);
+  --size_;
+}
+
+inline void ilist_base::clear() {
+  intrusive_node* n = head_.get_next();
+  while (n != &tail_) {
+    intrusive_node* prev = n;
+    n = n->get_next();
+    prev->remove_self();
+  }
+  head_.set_next(&tail_);
+  tail_.set_prev(&head_);
+}
+
+inline void ilist_base::node_invariant(intrusive_node* n) const {
+#ifndef NDEBUG
+  if (!n->is_linked()) {
+    assert(n->get_next() == nullptr);
+    assert(n->get_prev() == nullptr);
+    return;
+  }
+  if (n != &tail_) {
+    assert(n->get_next() != nullptr && "sanity error");
+    assert(n->get_next()->get_prev() == n && "sanity error");
+  }
+  if (n != &head_) {
+    assert(n->get_prev() != nullptr && "sanity error");
+    assert(n->get_prev()->get_next() == n && "sanity error");
+  }
+#else
+  static_cast<void>(n);
+#endif
+}
+
+inline void ilist_base::modification_invariant() const {
+#ifndef NDEBUG
+  assert(tail_.get_prev() != nullptr);
+  assert(head_.get_next() != nullptr);
+#endif
+}
+} // namespace details
+
+template <typename T, intrusive_node T::*node_ptr>
+class intrusive_list : public details::ilist_base {
+  using details::ilist_base::erase;
+
+public:
+  using details::ilist_base::insert_after;
+
+  using value_type = T;
+  using reference = value_type&;
+  using const_reference = const value_type&;
+  using pointer = value_type*;
+  using const_pointer = const value_type*;
+  using difference_type = std::ptrdiff_t;
+  using size_type = std::size_t;
 
   using iterator = pep::list_iterator<T, node_ptr>;
   using const_iterator = pep::list_iterator<T, node_ptr, true>;
 
-  constexpr islist() {}
+  intrusive_list() {
+    head_.set_next(std::addressof(tail_));
+    tail_.set_prev(std::addressof(head_));
+  }
 
-  bool empty() const { return head_.next() == nullptr; }
+  ~intrusive_list() {
+    if (empty()) {
+      return;
+    }
+    clear();
+  }
 
-  const_reference front() {
+  reference front() {
     assert(!empty());
-    return *(head_.next()->template owner<T>(node_ptr));
+    return *(head_.get_next()->template owner<T, node_ptr>());
   }
 
   const_reference front() const {
     assert(!empty());
-    return *(head_.next()->template owner<T>(node_ptr));
+    return *(head_.get_next()->template owner<T, node_ptr>());
   }
 
   reference back() {
     assert(!empty());
-    return *back_->owner<T>(node_ptr);
+    return *(tail_.get_prev()->template owner<T, node_ptr>());
   }
 
   const_reference back() const {
     assert(!empty());
-    return *back_->owner<T>(node_ptr);
+    return *(tail_.get_prev()->template owner<T, node_ptr>());
   }
-
-  difference_type size() const { return size_; }
 
   void push_back(pointer val) {
-    assert(val);
-    ++size_;
-    node* n = &(val->*node_ptr);
-    assert(n->next() == nullptr);
-    if (back_) {
-      assert(head_.next() != nullptr);
-      back_->next(n);
-    } else {
-      assert(head_.next() == nullptr);
-      head_.next(n);
-    }
-    back_ = n;
+    intrusive_node* real_tail = tail_.get_prev();
+    insert_after(real_tail->owner<T, node_ptr>(), val);
   }
 
-  void push_front(pointer val) {
-    assert(val);
-    ++size_;
-    node* n = &(val->*node_ptr);
-    assert(n->next() == nullptr);
-    n->next(head_.next());
-    head_.next(n);
-    if (!back_) {
-      back_ = n;
-    }
-  }
+  void push_front(pointer val) { insert_after(&head_, &(val->*node_ptr)); }
 
-  void insert_after(const_pointer pos, pointer val) {
+  void insert_after(pointer pos, pointer val) {
     modification_invariant();
-    // Insert the node after pos
-    // Check if it's an attempt to insert_after the begin() iterator.
-    if (pos == &head_) {
-      return push_front(val);
-    } else if (pos == back_) {
-      return push_back(val);
-    }
-    ++size_;
-    node& n = val->*node_ptr;
-    assert(n.next() == nullptr);
-    node& prev = pos->*node_ptr;
-    // Can't be tail, therefore next must not be null.
-    assert(prev.next() != nullptr);
-    // set the new node's next to the previous node's next
-    n.next(prev.next());
-    // update the previous node's next pointer to the inserted node.
-    prev.next(&n);
+    assert(pos != nullptr && "can't insert after a null pointer.");
+
+    intrusive_node* pos_node = &(pos->*node_ptr);
+    intrusive_node* n = &(val->*node_ptr);
+    return insert_after(pos_node, n);
   }
 
   void insert_after(const_iterator pos, pointer val) {
     // can't insert anything after `end`.
     assert(pos != end());
-    insert_after(&(*pos), val);
+    intrusive_node* pos_node = &((*pos).*node_ptr);
+    intrusive_node* n = &(val->*node_ptr);
+    return insert_after(pos_node, n);
   }
 
-  void pop_front() {
-    modification_invariant();
-    --size_;
-    node* tmp = head_.next();
-    head_.next(tmp->next());
-    if (size() == 0) {
-      assert(tmp == back_);
-      assert(head_.next() == nullptr);
-      back_ = nullptr;
-    }
-    tmp->next(nullptr);
+  void erase(iterator pos) {
+    intrusive_node* n = &((*pos).*node_ptr);
+    erase(n);
   }
 
-  iterator begin() { return {head_.next()}; }
-  const_iterator begin() const { return {head_.next()}; }
+  void erase(reference pos) {
+    intrusive_node* n = &(pos.*node_ptr);
+    erase(n);
+  }
+
+  iterator begin() { return iterator{head_.get_next()}; }
+  const_iterator begin() const { return const_iterator{head_.get_next()}; }
   const_iterator cbegin() const { return begin(); }
-  iterator end() { return {nullptr}; }
-  const_iterator end() const { return {nullptr}; }
+  iterator end() { return iterator{&tail_}; }
+  const_iterator end() const { return const_iterator{&tail_}; }
   const_iterator cend() const { return end(); }
-
-private:
-  void modification_invariant() const {
-    assert(!empty());
-    assert(size() > 0);
-    assert(back_ != nullptr);
-    assert(head_.next() != nullptr);
-  }
-
-  using node = intrusive_node;
-  // Sentinel head
-  node head_{};
-  node* back_{nullptr};
-  difference_type size_{0};
 };
 } // namespace pep
