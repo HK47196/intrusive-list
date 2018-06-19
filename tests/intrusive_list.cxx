@@ -72,19 +72,19 @@ TEST_CASE("ilist") {
   SUBCASE("1") {
     S s;
     REQUIRE(sl_.empty());
-    sl_.push_back(&s);
+    sl_.push_back(s);
     REQUIRE(!sl_.empty());
     sl_.pop_front();
     REQUIRE(sl_.empty());
-    sl_.push_back(&s);
+    sl_.push_back(s);
     REQUIRE(!sl_.empty());
     sl_.pop_front();
     REQUIRE(sl_.empty());
-    sl_.push_front(&s);
+    sl_.push_front(s);
     REQUIRE(!sl_.empty());
     sl_.pop_front();
     REQUIRE(sl_.empty());
-    sl_.push_front(&s);
+    sl_.push_front(s);
     REQUIRE(&sl_.back() == &sl_.front());
 
     sl sl3{};
@@ -109,7 +109,7 @@ TEST_CASE("ilist") {
     REQUIRE(std::distance(sl_.begin(), sl_.end()) == 0);
     REQUIRE(std::distance(sl_.cbegin(), sl_.cend()) == 0);
     S s;
-    sl_.push_front(&s);
+    sl_.push_front(s);
     REQUIRE(std::distance(sl_.begin(), sl_.end()) == 1);
     REQUIRE(std::distance(sl_.cbegin(), sl_.cend()) == 1);
     sl_.pop_front();
@@ -118,7 +118,7 @@ TEST_CASE("ilist") {
     REQUIRE(sl_.empty());
   }
   SUBCASE("3") {
-    std::for_each(arr.begin(), arr.end(), [&](S& s) { sl_.push_back(&s); });
+    std::for_each(arr.begin(), arr.end(), [&](S& s) { sl_.push_back(s); });
     REQUIRE(sl_.begin() == sl_.begin());
     REQUIRE(sl_.begin() != ++sl_.begin());
 
@@ -127,11 +127,11 @@ TEST_CASE("ilist") {
     REQUIRE((++sl_.begin()).ptr_ != nullptr);
   }
   SUBCASE("4") {
-    std::for_each(arr.begin(), arr.end(), [&](S& s) { sl_.push_back(&s); });
+    std::for_each(arr.begin(), arr.end(), [&](S& s) { sl_.push_back(s); });
     REQUIRE(std::equal(sl_.begin(), sl_.end(), arr.begin()));
   }
   SUBCASE("5") {
-    std::for_each(arr.begin(), arr.end(), [&](S& s) { sl_.push_back(&s); });
+    std::for_each(arr.begin(), arr.end(), [&](S& s) { sl_.push_back(s); });
     std::for_each(sl_.begin(), sl_.end(), [](S&) {});
     for (auto& s : sl_) {
       (void)s;
@@ -142,9 +142,9 @@ TEST_CASE("ilist") {
 TEST_CASE("iterators") {
   S a, b, c;
   sl sl_;
-  sl_.push_front(&a);
-  sl_.push_front(&b);
-  sl_.push_front(&c);
+  sl_.push_front(a);
+  sl_.push_front(b);
+  sl_.push_front(c);
   SUBCASE("prefix") {
     auto it = sl_.begin();
     REQUIRE(&(*it) == &c);
@@ -184,9 +184,9 @@ TEST_CASE("non-empty list destructor") {
   {
     sl sl_;
     REQUIRE(sl_.empty());
-    sl_.push_front(&a);
-    sl_.push_front(&b);
-    sl_.push_front(&c);
+    sl_.push_front(a);
+    sl_.push_front(b);
+    sl_.push_front(c);
     REQUIRE(!sl_.empty());
     // REQUIRE(sl_.size() == 3);
     REQUIRE(a.n.is_linked());
@@ -214,17 +214,17 @@ TEST_CASE("size, iterators") {
   REQUIRE(std::distance(csl.cbegin(), csl.cend()) == 0);
   REQUIRE(csl.begin() == csl.end());
 
-  sl_.push_front(&a);
+  sl_.push_front(a);
   REQUIRE(!sl_.is_empty());
   // REQUIRE(sl_.size() == 1);
   REQUIRE(!csl.is_empty());
   // REQUIRE(csl.size() == 1);
-  sl_.push_front(&b);
+  sl_.push_front(b);
   REQUIRE(!sl_.is_empty());
   // REQUIRE(sl_.size() == 2);
   REQUIRE(!csl.is_empty());
   // REQUIRE(csl.size() == 2);
-  sl_.push_front(&c);
+  sl_.push_front(c);
   REQUIRE(!sl_.is_empty());
   // REQUIRE(sl_.size() == 3);
   REQUIRE(!csl.is_empty());
@@ -274,11 +274,33 @@ TEST_CASE("move ctor") {
   S a{1, {}}, b{2, {}}, c{3, {}};
   sl sl_;
   {
-    sl_.push_front(&a);
-    sl_.push_front(&b);
-    sl_.push_front(&c);
+    sl_.push_front(a);
+    sl_.push_front(b);
+    sl_.push_front(c);
     S d{std::move(a)};
     REQUIRE(!a.n.is_linked());
     REQUIRE(d.n.is_linked());
   }
+}
+
+TEST_CASE("list move ctor"){
+  S a{1, {}}, b{2, {}}, c{3, {}};
+  sl sl_;
+  sl_.push_front(a);
+  sl_.push_front(b);
+  sl_.push_front(c);
+  REQUIRE(!sl_.empty());
+  REQUIRE(&sl_.front() == &c);
+  REQUIRE(&sl_.back() == &a);
+
+  /* sl sl2 = sl_;  shouldn't compile */
+  sl sl2 = std::move(sl_);
+  REQUIRE(sl_.empty());
+  REQUIRE(!sl2.empty());
+  REQUIRE(&sl2.front() == &c);
+  REQUIRE(&sl2.back() == &a);
+
+  sl2 = std::move(sl_);
+  REQUIRE(sl_.empty());
+  REQUIRE(sl2.empty());
 }

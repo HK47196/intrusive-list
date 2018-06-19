@@ -235,10 +235,20 @@ class ilist_base {
 public:
   using difference_type = std::ptrdiff_t;
 
+  inline ilist_base() noexcept;
+
+  ilist_base(const ilist_base&) = delete;
+  ilist_base& operator=(const ilist_base&) = delete;
+
+  inline ilist_base(ilist_base&& other) noexcept;
+  inline ilist_base& operator=(ilist_base&&) noexcept;
+
+  inline ~ilist_base();
+
   [[nodiscard]] inline bool empty() const;
   [[nodiscard]] inline bool is_empty() const;
   // [[nodiscard]] inline difference_type size() const;
-  inline void insert_after(intrusive_node* pos, intrusive_node* val);
+  inline void insert_after(intrusive_node& pos, intrusive_node& val);
   inline void pop_front();
   inline void pop_back();
 
@@ -251,8 +261,47 @@ protected:
 
   intrusive_node head_{};
   intrusive_node tail_{};
-  difference_type size_{0};
+
+private:
+  inline void move_from(ilist_base& other) noexcept;
 };
+
+inline ilist_base::ilist_base() noexcept {
+  head_.set_next(std::addressof(tail_));
+  tail_.set_prev(std::addressof(head_));
+}
+
+inline void ilist_base::move_from(ilist_base& other) noexcept {
+  if (other.empty()) {
+    head_.set_next(std::addressof(tail_));
+    tail_.set_prev(std::addressof(head_));
+  } else {
+    head_.set_next(other.head_.get_next());
+    head_.get_next()->set_prev(&head_);
+    tail_.set_prev(other.tail_.get_prev());
+    tail_.get_prev()->set_next(&tail_);
+  }
+  other.head_.set_next(&other.tail_);
+  other.tail_.set_prev(&other.head_);
+  assert(other.empty());
+}
+
+inline ilist_base::ilist_base(ilist_base&& other) noexcept {
+  move_from(other);
+}
+
+inline auto ilist_base::operator=(ilist_base&& other) noexcept -> ilist_base& {
+  clear();
+  move_from(other);
+  return *this;
+}
+
+inline ilist_base::~ilist_base() {
+  if (empty()) {
+    return;
+  }
+  clear();
+}
 
 inline bool ilist_base::empty() const {
   return is_empty();
@@ -266,18 +315,18 @@ inline bool ilist_base::is_empty() const {
 //   return size_;
 // }
 
-inline void ilist_base::insert_after(intrusive_node* pos, intrusive_node* val) {
-  node_invariant(val);
-  node_invariant(pos);
-  ++size_;
-  assert(!val->is_linked() && "this node is already part of a list.");
+inline void ilist_base::insert_after(intrusive_node& pos, intrusive_node& val) {
+  node_invariant(&val);
+  node_invariant(&pos);
+  // ++size_;
+  assert(!val.is_linked() && "this node is already part of a list.");
 
-  intrusive_node* next = pos->get_next();
-  assert(next->get_prev() == pos && "sanity error");
-  val->set_next(next);
-  val->set_prev(pos);
-  pos->set_next(val);
-  next->set_prev(val);
+  intrusive_node& next = *pos.get_next();
+  assert(next.get_prev() == &pos && "sanity error");
+  val.set_next(&next);
+  val.set_prev(&pos);
+  pos.set_next(&val);
+  next.set_prev(&val);
 }
 
 inline void ilist_base::pop_front() {
@@ -299,7 +348,7 @@ inline void ilist_base::erase(intrusive_node* n) {
   node_invariant(n);
   n->remove_self();
   node_invariant(n);
-  --size_;
+  // --size_;
 }
 
 inline void ilist_base::clear() {
@@ -359,18 +408,6 @@ public:
   using iterator = pep::list_iterator<T, node_ptr>;
   using const_iterator = pep::list_iterator<T, node_ptr, true>;
 
-  intrusive_list() {
-    head_.set_next(std::addressof(tail_));
-    tail_.set_prev(std::addressof(head_));
-  }
-
-  ~intrusive_list() {
-    if (empty()) {
-      return;
-    }
-    clear();
-  }
-
   reference front() {
     assert(!empty());
     return *(head_.get_next()->template owner<T, node_ptr>());
@@ -391,28 +428,28 @@ public:
     return *(tail_.get_prev()->template owner<T, node_ptr>());
   }
 
-  void push_back(pointer val) {
+  void push_back(reference val) {
     intrusive_node* real_tail = tail_.get_prev();
     assert(real_tail->is_linked() && "sanity error");
     insert_after(real_tail->owner<T, node_ptr>(), val);
   }
 
-  void push_front(pointer val) { insert_after(&head_, &(val->*node_ptr)); }
+  void push_front(reference val) { insert_after(head_, val.*node_ptr); }
 
-  void insert_after(pointer pos, pointer val) {
+  void insert_after(pointer pos, reference val) {
     modification_invariant();
     assert(pos != nullptr && "can't insert after a null pointer.");
 
-    intrusive_node* pos_node = &(pos->*node_ptr);
-    intrusive_node* n = &(val->*node_ptr);
+    intrusive_node& pos_node = pos->*node_ptr;
+    intrusive_node& n = val.*node_ptr;
     return insert_after(pos_node, n);
   }
 
-  void insert_after(const_iterator pos, pointer val) {
+  void insert_after(const_iterator pos, reference val) {
     // can't insert anything after `end`.
     assert(pos != end());
-    intrusive_node* pos_node = &((*pos).*node_ptr);
-    intrusive_node* n = &(val->*node_ptr);
+    intrusive_node& pos_node = (*pos).*node_ptr;
+    intrusive_node& n = val->*node_ptr;
     return insert_after(pos_node, n);
   }
 
